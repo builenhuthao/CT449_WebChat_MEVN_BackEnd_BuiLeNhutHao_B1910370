@@ -15,6 +15,10 @@ app.use(expressFormidable());
 
 const bcrypt = require("bcrypt");
 
+const jwt = require("jsonwebtoken");
+
+const jwtSecret = "jwtSecret1234567890";
+
 app.use(function (req, res, next) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader(
@@ -40,6 +44,71 @@ http.listen(process.env.PORT || 3000, function () {
     db = client.db("mevn_chat_app");
     global.db = db;
     console.log("Database connected");
+
+    app.post("/login", async function (request, result) {
+      // get values from login form
+      const email = request.fields.email;
+      const password = request.fields.password;
+
+      // check if email exists
+      const user = await db.collection("users").findOne({
+        email: email,
+      });
+
+      if (user == null) {
+        result.json({
+          status: "error",
+          message: "Email does not exists.",
+        });
+        return;
+      }
+
+      if (user.verifiedAt == null) {
+        result.json({
+          status: "error",
+          message: "Your email is not verified. Kindly verify your account.",
+        });
+        return;
+      }
+
+      // check if password is correct
+      bcrypt.compare(password, user.password, async function (error, isVerify) {
+        if (isVerify) {
+          // generate JWT of user
+          const accessToken = jwt.sign(
+            {
+              userId: user._id.toString(),
+            },
+            jwtSecret
+          );
+
+          // update JWT of user in database
+          await db.collection("users").findOneAndUpdate(
+            {
+              email: email,
+            },
+            {
+              $set: {
+                accessToken: accessToken,
+              },
+            }
+          );
+
+          result.json({
+            status: "success",
+            message: "Login successfully.",
+            accessToken: accessToken,
+          });
+
+          return;
+        }
+
+        result.json({
+          status: "error",
+          message: "Password is not correct.",
+        });
+      });
+    });
 
     app.post("/registration", async function (request, result) {
       const name = request.fields.name;
